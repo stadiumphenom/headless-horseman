@@ -1,6 +1,13 @@
 import streamlit as st
 import requests
 import os
+import streamlit.components.v1 as components
+
+with open("ui/matrix_rain.html", "r") as f:
+    matrix_html = f.read()
+
+components.html(matrix_html, height=0, width=0)
+
 
 st.set_page_config(page_title="Headless ChatGPT", layout="wide", initial_sidebar_state="expanded")
 
