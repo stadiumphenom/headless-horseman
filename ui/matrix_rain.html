@@ -1,160 +1,142 @@
-<!-- ui/matrix_rain.html -->
 <!doctype html>
 <html>
 <head>
 <meta charset="utf-8"/>
 <style>
   :root{
-    /* visual tuning */
-    --alpha: 0.08;         /* trail strength (lower = longer trails) */
-    --bg1: #0b1220;
-    --bg2: #070b14;
+    /* tuneables */
+    --trail: 0.06;           /* 0.03–0.08; higher = more fade, less trails */
+    --font-base: 20;         /* px baseline; layers scale from here */
+    --speed-back:  55;       /* ms/row */
+    --speed-mid:   36;
+    --speed-front: 24;
 
-    /* baseline font size; layers scale from this */
-    --font-base: 18;       /* px */
-
-    /* per-layer speed (lower = slower) */
-    --speed-back:  42;     /* ms per step */
-    --speed-mid:   28;
-    --speed-front: 18;
-
-    /* glow softness */
-    --glow: 4;             /* px; keep small to avoid blur */
+    /* background colors (used for fade too to avoid grey fog) */
+    --bg1: #0b111a;          /* darkest blue-black */
+    --bg2: #0a0f19;
   }
 
-  html,body{margin:0;padding:0;height:0}
+  html,body { margin:0; padding:0; height:0; }
   #neoCanvas{
-    position:fixed;inset:0;z-index:-1;pointer-events:none;
-    background: radial-gradient(1200px 800px at 8% 12%, var(--bg1) 0%, var(--bg2) 60%, #05070d 100%);
+    position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background: radial-gradient(1100px 780px at 10% 12%, var(--bg2) 0%, var(--bg1) 55%, #05070d 100%);
   }
 </style>
 </head>
 <body>
 <canvas id="neoCanvas"></canvas>
 <script>
-/*
-  NeoGlyph Rain — layered, no strobe, crisp, slower motion.
-  - 3 parallax layers (back/mid/front) with different font sizes & speeds
-  - subtle per-column color variance (no global strobing)
-  - easy glyph override: set window.NEO_GLYPHS = "…"
-*/
-
 (() => {
   const canvas = document.getElementById('neoCanvas');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: true });
 
-  // --- glyph set (override by defining window.NEO_GLYPHS) ---
+  // override from Streamlit by injecting window.NEO_GLYPHS before this script
   const fallback = "Δ◉◆○⬣⬢◇✧✦✼✺✹✸✷⚚⚝⚘☼☯⌁⌇⌘⌬⌖⌗⟡⟠⟣⟟⟜░▒▓█▚▞▩▣▧▤▥▦▨▯▮▭▰▱";
   const glyphs = (window.NEO_GLYPHS || fallback).split("");
 
-  // palette: fixed cool neon set, no time-based cycling
-  const palette = [
-    "#00f5d4","#00e5ff","#6e7bff","#b07aff",
-    "#ff59cf","#ff7a6b","#ffd166","#a0ff6a"
-  ];
+  // neon palette (static; no strobe)
+  const palette = ["#00f5d4","#00e5ff","#7b82ff","#b07aff","#ff59cf","#ff7a6b","#ffd166","#a0ff6a"];
 
-  // util
-  const cssNum = (v, d=0) => {
-    const n = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v));
-    return isNaN(n) ? d : n;
+  // helpers
+  const css = (k, d=0) => {
+    const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(k));
+    return Number.isFinite(v) ? v : d;
   };
 
+  // HiDPI crispness
+  let DPR = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
   let W=0, H=0;
   function resize(){
-    W = canvas.width  = window.innerWidth;
-    H = canvas.height = window.innerHeight;
+    DPR = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    canvas.style.width  = w + "px";
+    canvas.style.height = h + "px";
+    canvas.width  = Math.floor(w * DPR);
+    canvas.height = Math.floor(h * DPR);
+
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+
     layers.forEach(L => L.init());
   }
   window.addEventListener('resize', resize);
 
-  // Layer factory
-  function makeLayer(opts){
-    const L = {
-      name: opts.name,
-      fontScale: opts.fontScale,       // relative to --font-base
-      stepMs: opts.stepMs,             // ms per vertical step
-      shade: opts.shade,               // 0..1 mixes palette → subtle variance
+  function Layer(scale, stepMs, tintMix){
+    return {
+      size: 0,
       cols: 0,
-      size: 0,                          // px
       drops: [],
-      tacc: 0,
+      colColor: [],
+      acc: 0,
       init(){
-        const base = cssNum('--font-base', 18);
-        this.size = Math.max(12, Math.round(base * this.fontScale));
-        ctx.font = `${this.size}px monospace`;
-        this.cols = Math.max(1, Math.floor(W / this.size));
-        // each column starts at random row
-        this.drops = new Array(this.cols).fill(0).map(()=>Math.floor(Math.random()*Math.ceil(H/this.size)));
-        // precompute colors per column (no strobe)
-        this.colColor = new Array(this.cols).fill(0).map((_,i)=>{
-          const c = palette[i % palette.length];
-          // slightly mix with neighbor color for variation
-          const mix = palette[(i+3) % palette.length];
-          const ratio = 0.15 + this.shade * 0.25;
-          return lerpColor(c, mix, ratio);
+        const base = css('--font-base', 20);
+        this.size = Math.max(12, Math.round(base * scale));
+        this.cols = Math.max(1, Math.floor(window.innerWidth / this.size));
+        this.drops = Array.from({length: this.cols}, () => Math.floor(Math.random()* (window.innerHeight/this.size)));
+        this.colColor = Array.from({length: this.cols}, (_, i) => {
+          const a = palette[i % palette.length];
+          const b = palette[(i+3) % palette.length];
+          return lerp(a,b,tintMix);
         });
       },
       step(dt){
-        this.tacc += dt;
-        if(this.tacc < this.stepMs) return;   // control speed
-        this.tacc = 0;
+        this.acc += dt;
+        if (this.acc < stepMs) return;
+        this.acc = 0;
 
-        // trail
-        ctx.fillStyle = `rgba(0,0,0,${cssNum('--alpha',0.08)})`;
-        ctx.fillRect(0,0,W,H);
+        // fade with bg-colored veil (prevents grey fog)
+        const trail = Math.max(0.0, Math.min(0.3, css('--trail', 0.06)));
+        const bg = hexToRgb(getComputedStyle(document.documentElement).getPropertyValue('--bg1').trim());
+        ctx.fillStyle = `rgba(${bg.r},${bg.g},${bg.b},${trail})`;
+        ctx.fillRect(0,0,window.innerWidth,window.innerHeight);
 
-        // draw each column
-        ctx.shadowBlur = cssNum('--glow',4);
-
-        for(let i=0;i<this.cols;i++){
-          const x = i * this.size;
-          const y = this.drops[i] * this.size;
-
-          ctx.shadowColor = this.colColor[i];
-          ctx.fillStyle   = this.colColor[i];
-
-          const g = glyphs[(Math.random()*glyphs.length)|0];
+        // crisp text, no blur
+        ctx.textBaseline = "top";
+        ctx.textAlign = "left";
+        for (let i=0;i<this.cols;i++){
+          const x = (i * this.size) | 0;              // integer snap
+          const y = (this.drops[i] * this.size) | 0;
+          ctx.fillStyle = this.colColor[i];
           ctx.font = `${this.size}px monospace`;
-          ctx.fillText(g, x, y);
+          ctx.fillText(glyphs[(Math.random()*glyphs.length)|0], x, y);
 
-          // reset drop with gentle randomness
-          if(y > H && Math.random() > 0.975) this.drops[i] = 0;
-          this.drops[i]++; // advance one row
+          if (y > window.innerHeight && Math.random() > 0.985) this.drops[i] = 0;
+          this.drops[i] += 1; // slow step
         }
       }
     };
-    return L;
   }
 
-  // Color lerp in sRGB
-  function lerpColor(a,b,t){
-    const pa = hexToRgb(a), pb = hexToRgb(b);
-    const r = Math.round(pa.r + (pb.r - pa.r) * t);
-    const g = Math.round(pa.g + (pb.g - pa.g) * t);
-    const b2= Math.round(pa.b + (pb.b - pa.b) * t);
-    return `rgb(${r},${g},${b2})`;
-  }
   function hexToRgb(h){
-    const s = h.replace('#','');
+    const s = h.replace('#','').trim();
     const n = s.length===3 ? s.split('').map(c=>c+c).join('') : s;
     return { r:parseInt(n.slice(0,2),16), g:parseInt(n.slice(2,4),16), b:parseInt(n.slice(4,6),16) };
   }
+  function lerp(a,b,t){
+    const A = hexToRgb(a), B = hexToRgb(b);
+    const r = Math.round(A.r + (B.r-A.r)*t);
+    const g = Math.round(A.g + (B.g-A.g)*t);
+    const bl= Math.round(A.b + (B.b-A.b)*t);
+    return `rgb(${r},${g},${bl})`;
+  }
 
-  // Three layers: background slow/big, mid medium, front fastest/smallest
+  // three depth layers: larger + slower in back; smaller + faster in front
   const layers = [
-    makeLayer({ name:'back',  fontScale:1.4, stepMs: cssNum('--speed-back',42),  shade: 0.10 }),
-    makeLayer({ name:'mid',   fontScale:1.0, stepMs: cssNum('--speed-mid',28),   shade: 0.25 }),
-    makeLayer({ name:'front', fontScale:0.78,stepMs: cssNum('--speed-front',18), shade: 0.40 })
+    Layer(1.35, css('--speed-back',55), 0.10),
+    Layer(1.00, css('--speed-mid',36),  0.22),
+    Layer(0.78, css('--speed-front',24),0.33),
   ];
 
   resize();
 
-  // animation loop with proper delta timing
+  // main loop with delta timing
   let last = performance.now();
   function frame(now){
     const dt = now - last; last = now;
-    // we do one clear per frame for all layers (trail controlled by alpha)
-    // (already handled inside step to keep trails layer-consistent)
+    // only clear once at start of run (background already set via CSS)
+    // each layer handles its own fading to keep trails aligned with size
     layers.forEach(L => L.step(dt));
     requestAnimationFrame(frame);
   }
