@@ -14,7 +14,7 @@ st.set_page_config(page_title="PRIMUS — Signal Chat", layout="wide")
 try:
     import streamlit.components.v1 as components
     with open("ui/matrix_rain.html", "r", encoding="utf-8") as f:
-        components.html(f.read(), height=0, width=0)  # fixed canvas behind the app
+        components.html(f.read(), height=200, width=0)  # fixed canvas behind the app
 except Exception:
     pass
 
