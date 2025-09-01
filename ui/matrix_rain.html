@@ -1,44 +1,82 @@
-<!DOCTYPE html>
+<!-- ui/matrix_rain.html -->
+<!doctype html>
 <html>
-  <head>
-    <style>
-      body {
-        margin: 0;
-        overflow: hidden;
-        background: black;
-      }
-    </style>
-  </head>
-  <body>
-    <canvas id="matrix"></canvas>
-    <script>
-      const canvas = document.getElementById("matrix");
-      const ctx = canvas.getContext("2d");
+<head>
+<meta charset="utf-8"/>
+<style>
+  :root {
+    --z: -1;                 /* keep behind Streamlit app */
+    --alpha: 0.12;           /* trail opacity */
+    --font: 16px monospace;  /* base font size */
+  }
+  html, body { margin:0; padding:0; height:0; }
+  #neoCanvas {
+    position: fixed; inset: 0;
+    z-index: var(--z);
+    pointer-events: none;
+    background: radial-gradient(1200px 800px at 10% 10%, #0b1220 0%, #070b14 45%, #05070d 70%, #02040a 100%);
+  }
+</style>
+</head>
+<body>
+<canvas id="neoCanvas"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('neoCanvas');
+  const ctx = canvas.getContext('2d');
 
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+  // A fun NeoGlyph-ish set (mix of unicode shapes + your glyph chars)
+  const glyphs = "Δ◉◆○⬣⬢◇✧✦✼✺✹✸✷⚚⚝⚘☼☯⌁⌇⌘⌬⌖⌗⟡⟠⟣⟟⟜░▒▓█▚▞▩▣▧▤▥▦▨▯▮▭▰▱".split("");
 
-      const letters = Array(256).join("1").split("");
-      const fontSize = 14;
-      function getRandomColor() {
-  return `hsl(${Math.floor(Math.random() * 360)}, 100%, 50%)`;
-}
+  const colors = [
+    "#00ffd0", "#00e2ff", "#7c83ff", "#b46bff", "#ff59cf", "#ff7b66", "#ffd166", "#a1ff69"
+  ];
 
-      function draw() {
-        ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = getRandomColor();
-        ctx.font = fontSize + "px monospace";
+  let w, h, cols, fontSize, drops, colorIndex = 0;
 
-        letters.forEach((y_pos, index) => {
-          const text = String.fromCharCode(0x30A0 + Math.random() * 96);
-          const x_pos = index * fontSize;
-          ctx.fillText(text, x_pos, y_pos);
-          letters[index] = y_pos > canvas.height && Math.random() > 0.975 ? 0 : y_pos + fontSize;
-        });
-      }
+  function resize() {
+    w = canvas.width  = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+    fontSize = Math.max(14, Math.min(24, Math.floor(w / 80)));
+    ctx.font = `${fontSize}px monospace`;
+    cols = Math.floor(w / fontSize);
+    drops = Array(cols).fill(1 + Math.floor(Math.random()*h/fontSize));
+  }
 
-      setInterval(draw, 50);
-    </script>
-  </body>
+  function nextColor() {
+    colorIndex = (colorIndex + 1) % colors.length;
+    return colors[colorIndex];
+  }
+
+  function draw() {
+    // translucent clear to create trails
+    ctx.fillStyle = `rgba(0,0,0,${parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--alpha'))})`;
+    ctx.fillRect(0, 0, w, h);
+
+    // occasionally shift hue to create a multicolor flow
+    const stroke = nextColor();
+
+    for (let i = 0; i < drops.length; i++) {
+      const text = glyphs[Math.floor(Math.random() * glyphs.length)];
+      const x = i * fontSize;
+      const y = drops[i] * fontSize;
+
+      // glow-ish composite
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = stroke;
+      ctx.fillStyle = stroke;
+      ctx.fillText(text, x, y);
+
+      if (y > h && Math.random() > 0.975) drops[i] = 0;
+      drops[i]++;
+    }
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
 </html>
