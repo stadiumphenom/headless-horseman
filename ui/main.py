@@ -44,7 +44,7 @@ max_tokens = st.sidebar.slider("Max tokens", 128, 8192, 1024, 64)
 system_prompt = st.sidebar.text_area(
     "System prompt",
     value="You are PRIMUS: concise, capable, a little snarky when warranted, but always helpful.",
-    height=90,
+    height=150,
 )
 
 # ------------- Session state -------------
