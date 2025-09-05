@@ -1,100 +1,78 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<meta charset="utf-8"/>
-<style>
-  :root {
-    --trail: 0.05;
-    --font-base: 20;
-    --speed-back: 60;
-    --speed-mid: 36;
-    --speed-front: 24;
-
-    --bg1: #0b0d14;
-    --bg2: #090911;
-  }
-
-  html, body {
-    margin: 0;
-    padding: 0;
-    height: 0;
-  }
-
-  #neoCanvas {
-    position: fixed;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background: radial-gradient(1200px 780px at 12% 8%, var(--bg2) 0%, var(--bg1) 50%, #000000 100%);
-  }
-</style>
+  <meta charset="UTF-8" />
+  <title>NeoGlyph Matrix Rain 3D</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #0d0d0d;
+      overflow: hidden;
+      height: 100%;
+    }
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
 </head>
 <body>
-<canvas id="neoCanvas"></canvas>
-<script>
-(() => {
-  const canvas = document.getElementById('neoCanvas');
-  const ctx = canvas.getContext('2d');
+  <canvas id="layer1"></canvas>
+  <canvas id="layer2"></canvas>
+  <canvas id="layer3"></canvas>
 
-  const glyphs = (
-    window.NEO_GLYPHS ||
-    "⟁⟠◉⧫☍✶✦✧⧖⚚⌬⌁⟁∆∴☼⟡∞❈◆◇⬢⬣✱⚛✵✷☍⇋↯➶⊛◈✥▥▦▧▩"
-  ).split("");
+  <script>
+    const charset = 'アァイィウヴエェオカガキギクグケゲコゴサザシジスズセゼソゾタダチヂッヅテデトドナニヌネノハバパヒビピフブプヘベペホボポマミムメモヤユヨラリルレロワヲンabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*(){}[]<>+=-|/\\~`';
 
-  const palette = [
-    "#39ff14", // neon green
-    "#ff66cc", // neon pink
-    "#da70ff", // neon purple
-    "#ffff66"  // neon yellow
-  ];
+    function initMatrix(canvasId, fontSize, speed, opacity, color) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
 
-  const css = (v, d=0) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || d;
+      const columns = Math.floor(canvas.width / fontSize);
+      const drops = Array(columns).fill(0);
 
-  let DPR = window.devicePixelRatio || 1;
-  let W = 0, H = 0;
+      function draw() {
+        ctx.fillStyle = `rgba(13, 13, 13, ${opacity})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  function resize() {
-    DPR = window.devicePixelRatio || 1;
-    W = canvas.width  = window.innerWidth * DPR;
-    H = canvas.height = window.innerHeight * DPR;
-    canvas.style.width = window.innerWidth + "px";
-    canvas.style.height = window.innerHeight + "px";
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.imageSmoothingEnabled = false;
-    layers.forEach(L => L.init());
-  }
+        ctx.font = fontSize + "px monospace";
+        ctx.fillStyle = color;
 
-  window.addEventListener("resize", resize);
+        for (let i = 0; i < drops.length; i++) {
+          const char = charset[Math.floor(Math.random() * charset.length)];
+          const flippedChar = Math.random() > 0.5 ? char.split('').reverse().join('') : char;
+          const x = i * fontSize;
+          const y = drops[i] * fontSize;
 
-  function Layer(scale, speed, colorShift) {
-    const layer = {
-      size: 0,
-      cols: 0,
-      drops: [],
-      colors: [],
-      drift: [],
-      acc: 0,
-      init() {
-        this.size = Math.round(css('--font-base') * scale);
-        this.cols = Math.floor(window.innerWidth / this.size);
-        this.drops = Array(this.cols).fill().map(() => Math.floor(Math.random() * 50));
-        this.colors = Array(this.cols).fill().map((_, i) => palette[(i + colorShift) % palette.length]);
-        this.drift = Array(this.cols).fill().map(() => Math.random() * 2 - 1);
-      },
-      step(dt) {
-        this.acc += dt;
-        if (this.acc < speed) return;
-        this.acc = 0;
+          ctx.save();
+          if (Math.random() > 0.5) ctx.scale(1, -1); // flip vertically
+          ctx.fillText(flippedChar, x, y);
+          ctx.restore();
 
-        const trail = css('--trail');
-        const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg1').trim();
-        const { r, g, b } = hexToRgb(bg);
-        ctx.fillStyle = `rgba(${r},${g},${b},${trail})`;
-        ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+          if (y > canvas.height && Math.random() > 0.975) {
+            drops[i] = 0;
+          }
 
-        ctx.textAlign = "left";
-        ctx.textBaseline = "top";
+          drops[i]++;
+        }
+      }
 
-        for (let i = 0; i < this.cols; i++) {
-          const x = Math.floor(i * this.size + Math.sin(performance.now() / 300 + i) * this.drift[i] * 4);
-          const y = this.drops
+      setInterval(draw, speed);
+    }
+
+    // Layer setup (layerId, fontSize, speed, opacity, color)
+    initMatrix("layer1", 16, 35, 0.08, "#00FFFF"); // cyan-ish
+    initMatrix("layer2", 14, 45, 0.06, "#9966FF"); // purple
+    initMatrix("layer3", 12, 60, 0.04, "#66FF99"); // mint
+
+    window.addEventListener('resize', () => location.reload());
+  </script>
+</body>
+</html>
