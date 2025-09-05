@@ -3,23 +3,29 @@
 <head>
 <meta charset="utf-8"/>
 <style>
-  :root{
-    /* tuneables */
-    --trail: 0.06;           /* 0.03–0.08; higher = more fade, less trails */
-    --font-base: 20;         /* px baseline; layers scale from here */
-    --speed-back:  55;       /* ms/row */
-    --speed-mid:   36;
+  :root {
+    --trail: 0.05;
+    --font-base: 20;
+    --speed-back: 60;
+    --speed-mid: 36;
     --speed-front: 24;
 
-    /* background colors (used for fade too to avoid grey fog) */
-    --bg1: #0b111a;          /* darkest blue-black */
-    --bg2: #0a0f19;
+    --bg1: #0b0d14;
+    --bg2: #090911;
   }
 
-  html,body { margin:0; padding:0; height:0; }
-  #neoCanvas{
-    position:fixed; inset:0; z-index:-1; pointer-events:none;
-    background: radial-gradient(1100px 780px at 10% 12%, var(--bg2) 0%, var(--bg1) 55%, #05070d 100%);
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 0;
+  }
+
+  #neoCanvas {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: radial-gradient(1200px 780px at 12% 8%, var(--bg2) 0%, var(--bg1) 50%, #000000 100%);
   }
 </style>
 </head>
@@ -28,120 +34,67 @@
 <script>
 (() => {
   const canvas = document.getElementById('neoCanvas');
-  const ctx = canvas.getContext('2d', { alpha: true });
+  const ctx = canvas.getContext('2d');
 
-  // override from Streamlit by injecting window.NEO_GLYPHS before this script
-  const fallback = "Δ◉◆○⬣⬢◇✧✦✼✺✹✸✷⚚⚝⚘☼☯⌁⌇⌘⌬⌖⌗⟡⟠⟣⟟⟜░▒▓█▚▞▩▣▧▤▥▦▨▯▮▭▰▱";
-  const glyphs = (window.NEO_GLYPHS || fallback).split("");
+  const glyphs = (
+    window.NEO_GLYPHS ||
+    "⟁⟠◉⧫☍✶✦✧⧖⚚⌬⌁⟁∆∴☼⟡∞❈◆◇⬢⬣✱⚛✵✷☍⇋↯➶⊛◈✥▥▦▧▩"
+  ).split("");
 
-  // neon palette (static; no strobe)
-  const palette = ["#00f5d4","#00e5ff","#7b82ff","#b07aff","#ff59cf","#ff7a6b","#ffd166","#a0ff6a"];
+  const palette = [
+    "#39ff14", // neon green
+    "#ff66cc", // neon pink
+    "#da70ff", // neon purple
+    "#ffff66"  // neon yellow
+  ];
 
-  // helpers
-  const css = (k, d=0) => {
-    const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(k));
-    return Number.isFinite(v) ? v : d;
-  };
+  const css = (v, d=0) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || d;
 
-  // HiDPI crispness
-  let DPR = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-  let W=0, H=0;
-  function resize(){
-    DPR = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+  let DPR = window.devicePixelRatio || 1;
+  let W = 0, H = 0;
 
-    canvas.style.width  = w + "px";
-    canvas.style.height = h + "px";
-    canvas.width  = Math.floor(w * DPR);
-    canvas.height = Math.floor(h * DPR);
-
+  function resize() {
+    DPR = window.devicePixelRatio || 1;
+    W = canvas.width  = window.innerWidth * DPR;
+    H = canvas.height = window.innerHeight * DPR;
+    canvas.style.width = window.innerWidth + "px";
+    canvas.style.height = window.innerHeight + "px";
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.imageSmoothingEnabled = false;
-
     layers.forEach(L => L.init());
   }
-  window.addEventListener('resize', resize);
 
-  function Layer(scale, stepMs, tintMix){
-    return {
+  window.addEventListener("resize", resize);
+
+  function Layer(scale, speed, colorShift) {
+    const layer = {
       size: 0,
       cols: 0,
       drops: [],
-      colColor: [],
+      colors: [],
+      drift: [],
       acc: 0,
-      init(){
-        const base = css('--font-base', 20);
-        this.size = Math.max(12, Math.round(base * scale));
-        this.cols = Math.max(1, Math.floor(window.innerWidth / this.size));
-        this.drops = Array.from({length: this.cols}, () => Math.floor(Math.random()* (window.innerHeight/this.size)));
-        this.colColor = Array.from({length: this.cols}, (_, i) => {
-          const a = palette[i % palette.length];
-          const b = palette[(i+3) % palette.length];
-          return lerp(a,b,tintMix);
-        });
+      init() {
+        this.size = Math.round(css('--font-base') * scale);
+        this.cols = Math.floor(window.innerWidth / this.size);
+        this.drops = Array(this.cols).fill().map(() => Math.floor(Math.random() * 50));
+        this.colors = Array(this.cols).fill().map((_, i) => palette[(i + colorShift) % palette.length]);
+        this.drift = Array(this.cols).fill().map(() => Math.random() * 2 - 1);
       },
-      step(dt){
+      step(dt) {
         this.acc += dt;
-        if (this.acc < stepMs) return;
+        if (this.acc < speed) return;
         this.acc = 0;
 
-        // fade with bg-colored veil (prevents grey fog)
-        const trail = Math.max(0.0, Math.min(0.3, css('--trail', 0.06)));
-        const bg = hexToRgb(getComputedStyle(document.documentElement).getPropertyValue('--bg1').trim());
-        ctx.fillStyle = `rgba(${bg.r},${bg.g},${bg.b},${trail})`;
-        ctx.fillRect(0,0,window.innerWidth,window.innerHeight);
+        const trail = css('--trail');
+        const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg1').trim();
+        const { r, g, b } = hexToRgb(bg);
+        ctx.fillStyle = `rgba(${r},${g},${b},${trail})`;
+        ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
-        // crisp text, no blur
-        ctx.textBaseline = "top";
         ctx.textAlign = "left";
-        for (let i=0;i<this.cols;i++){
-          const x = (i * this.size) | 0;              // integer snap
-          const y = (this.drops[i] * this.size) | 0;
-          ctx.fillStyle = this.colColor[i];
-          ctx.font = `${this.size}px monospace`;
-          ctx.fillText(glyphs[(Math.random()*glyphs.length)|0], x, y);
+        ctx.textBaseline = "top";
 
-          if (y > window.innerHeight && Math.random() > 0.985) this.drops[i] = 0;
-          this.drops[i] += 1; // slow step
-        }
-      }
-    };
-  }
-
-  function hexToRgb(h){
-    const s = h.replace('#','').trim();
-    const n = s.length===3 ? s.split('').map(c=>c+c).join('') : s;
-    return { r:parseInt(n.slice(0,2),16), g:parseInt(n.slice(2,4),16), b:parseInt(n.slice(4,6),16) };
-  }
-  function lerp(a,b,t){
-    const A = hexToRgb(a), B = hexToRgb(b);
-    const r = Math.round(A.r + (B.r-A.r)*t);
-    const g = Math.round(A.g + (B.g-A.g)*t);
-    const bl= Math.round(A.b + (B.b-A.b)*t);
-    return `rgb(${r},${g},${bl})`;
-  }
-
-  // three depth layers: larger + slower in back; smaller + faster in front
-  const layers = [
-    Layer(1.35, css('--speed-back',55), 0.10),
-    Layer(1.00, css('--speed-mid',36),  0.22),
-    Layer(0.78, css('--speed-front',24),0.33),
-  ];
-
-  resize();
-
-  // main loop with delta timing
-  let last = performance.now();
-  function frame(now){
-    const dt = now - last; last = now;
-    // only clear once at start of run (background already set via CSS)
-    // each layer handles its own fading to keep trails aligned with size
-    layers.forEach(L => L.step(dt));
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-})();
-</script>
-</body>
-</html>
+        for (let i = 0; i < this.cols; i++) {
+          const x = Math.floor(i * this.size + Math.sin(performance.now() / 300 + i) * this.drift[i] * 4);
+          const y = this.drops
